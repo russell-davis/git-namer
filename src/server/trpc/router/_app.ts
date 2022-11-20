@@ -2,7 +2,6 @@ import { publicProcedure, router } from "../trpc";
 import { exampleRouter } from "./example";
 import { z } from "zod";
 import axios from "axios";
-import { btoa } from "buffer";
 import { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
 export const appRouter = router({
@@ -12,18 +11,15 @@ export const appRouter = router({
       .input(
         z.object({
           pbi: z.string(),
-          username: z.string(),
-          password: z.string(),
+          token: z.string(),
         })
       )
       .mutation((input) => {
         const config = {
           method: "get",
-          url: `https://dev.azure.com/interworks/Internal/_apis/wit/workitems/${input.input.pbi}?api-version=7.0`,
+          url: `https://dev.azure.com/${process.env.AZ_ORG}/${process.env.AZ_PROJ}/_apis/wit/workitems/${input.input.pbi}?api-version=7.0`,
           headers: {
-            Authorization: `Basic ${btoa(
-              `${input.input.username}:${input.input.password}`
-            )}`,
+            Authorization: `Basic ${input.input.token}`,
           },
         };
         const pbiData = axios(config)
@@ -33,12 +29,65 @@ export const appRouter = router({
             const payload = {
               id: data.id,
               title: fields["System.Title"],
+              type: fields["System.WorkItemType"],
             };
-            console.debug(payload);
-            return payload;
+            return {
+              ok: true,
+              payload,
+              error: null,
+            };
           })
           .catch(function (error) {
-            console.log(error);
+            console.log(error.response.data.message);
+            return {
+              ok: false,
+              payload: null,
+              error: error.response.data.message,
+            };
+          });
+        return pbiData;
+      }),
+  }),
+  auth: router({
+    verifyLogin: publicProcedure
+      .input(
+        z.object({
+          token: z.string(),
+        })
+      )
+      .mutation((input) => {
+        const config = {
+          method: "get",
+          url: `https://dev.azure.com/interworks/Internal/_apis/git/repositories/MOAS/pullrequests?api-version=7`,
+          headers: {
+            Authorization: `Basic ${input.input.token}`,
+          },
+        };
+        const pbiData = axios(config)
+          .then(function (response) {
+            if (response.status === 200) {
+              return {
+                ok: true,
+                payload: {
+                  count: response.data.count,
+                },
+                error: null,
+              };
+            } else if (response.status === 203) {
+              return {
+                ok: false,
+                payload: null,
+                error: "Invalid credentials",
+              };
+            }
+          })
+          .catch(function (error) {
+            console.log(error.response.data.message);
+            return {
+              ok: false,
+              payload: null,
+              error: error.response.data.message,
+            };
           });
         return pbiData;
       }),
